@@ -403,6 +403,7 @@ async function main(): Promise<void> {
 
 			res.json({
 				as_of: new Date().toISOString(),
+				endpoint: "today",
 				recovery: recovery ? {
 					score: recovery.recovery_score,
 					hrv_rmssd_ms: recovery.hrv_rmssd,
@@ -429,6 +430,47 @@ async function main(): Promise<void> {
 					avg_hr_bpm: cycle.avg_hr,
 					max_hr_bpm: cycle.max_hr,
 				} : null,
+			});
+		});
+
+		// REST endpoint for trend queries — used by Luka /whoop skill for "past N days"
+		// Auth: Bearer <MCP_AUTH_TOKEN>
+		// Query: ?days=14 (default 14, max 90)
+		app.get('/api/trends', async (req: Request, res: Response) => {
+			const authHeader = req.headers['authorization'] || '';
+			const expected = process.env.MCP_AUTH_TOKEN;
+			if (!expected) {
+				res.status(500).json({ error: 'server_misconfigured', detail: 'MCP_AUTH_TOKEN not set' });
+				return;
+			}
+			if (authHeader !== `Bearer ${expected}`) {
+				res.status(401).json({ error: 'unauthorized' });
+				return;
+			}
+
+			const tokens = db.getTokens();
+			if (!tokens) {
+				res.status(503).json({ error: 'not_authenticated', detail: 'Whoop OAuth not completed' });
+				return;
+			}
+			client.setTokens(tokens);
+			try {
+				await sync.smartSync();
+			} catch {
+				// continue with cached data
+			}
+
+			let days = parseInt(String(req.query.days ?? '14'), 10);
+			if (!Number.isFinite(days) || days < 1) days = 14;
+			if (days > 90) days = 90;
+
+			res.json({
+				as_of: new Date().toISOString(),
+				endpoint: "trends",
+				days,
+				recovery: db.getRecoveryTrends(days),
+				sleep: db.getSleepTrends(days),
+				strain: db.getStrainTrends(days),
 			});
 		});
 
