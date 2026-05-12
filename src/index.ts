@@ -526,6 +526,46 @@ async function main(): Promise<void> {
 			});
 		});
 
+		// Debug: force sync + dump raw Whoop API workout response
+		app.get('/api/debug/workouts-raw', async (req: Request, res: Response) => {
+			const authHeader = req.headers['authorization'] || '';
+			const expected = process.env.MCP_AUTH_TOKEN;
+			if (!expected) { res.status(500).json({ error: 'server_misconfigured' }); return; }
+			if (authHeader !== `Bearer ${expected}`) { res.status(401).json({ error: 'unauthorized' }); return; }
+
+			const tokens = db.getTokens();
+			if (!tokens) { res.status(503).json({ error: 'not_authenticated' }); return; }
+			client.setTokens(tokens);
+
+			const days = parseInt(String(req.query.days ?? '30'), 10);
+			const end = new Date().toISOString();
+			const start = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
+
+			let whoopResp: any;
+			let syncStats: any;
+			let errMsg: string | null = null;
+			try {
+				whoopResp = await client.getAllWorkouts({ start, end });
+			} catch (e: any) {
+				errMsg = e?.message ?? String(e);
+			}
+			try {
+				syncStats = await sync.syncDays(days);
+			} catch (e: any) {
+				if (!errMsg) errMsg = e?.message ?? String(e);
+			}
+
+			res.json({
+				as_of: new Date().toISOString(),
+				query_window: { start, end, days },
+				whoop_api_returned_count: whoopResp ? whoopResp.length : null,
+				whoop_api_sample: whoopResp && whoopResp.length ? whoopResp.slice(0, 2) : [],
+				sync_stats: syncStats,
+				db_workouts_after_sync: db.getWorkoutsByDateRange(start, end).length,
+				error: errMsg,
+			});
+		});
+
 		// Dedicated workouts endpoint with same auth+shape as /api/trends.workouts
 		app.get('/api/workouts', async (req: Request, res: Response) => {
 			const authHeader = req.headers['authorization'] || '';
