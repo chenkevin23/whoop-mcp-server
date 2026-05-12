@@ -355,8 +355,15 @@ async function main(): Promise<void> {
 				db.saveTokens(tokens);
 				sync.syncDays(90).catch(() => {});
 				res.send('Authorization successful! You can close this window.');
-			} catch {
-				res.status(500).send('Authorization failed. Please try again.');
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				console.error('OAuth callback error:', msg);
+				res.status(500).type('text/plain').send(
+					`Authorization failed:\n\n${msg}\n\n---\nEnv check:\n` +
+					`WHOOP_REDIRECT_URI=${process.env.WHOOP_REDIRECT_URI ?? '(unset)'}\n` +
+					`WHOOP_CLIENT_ID=${(process.env.WHOOP_CLIENT_ID ?? '(unset)').slice(0,8)}...\n` +
+					`WHOOP_CLIENT_SECRET=${process.env.WHOOP_CLIENT_SECRET ? '(set, ' + process.env.WHOOP_CLIENT_SECRET.length + ' chars)' : '(unset)'}`
+				);
 			}
 		});
 
