@@ -68,15 +68,28 @@ export class WhoopClient {
 			}),
 		});
 
+		const rawText = await response.text();
+		console.error(`[debug] token exchange status=${response.status} body=${rawText.slice(0, 500)}`);
+
 		if (!response.ok) {
-			throw new Error(`Token exchange failed: ${await response.text()}`);
+			throw new Error(`Token exchange failed (HTTP ${response.status}): ${rawText}`);
 		}
 
-		const data = await response.json() as { access_token: string; refresh_token: string; expires_in: number };
+		let data: { access_token?: string; refresh_token?: string; expires_in?: number };
+		try {
+			data = JSON.parse(rawText);
+		} catch (parseErr) {
+			throw new Error(`Token endpoint returned 2xx but body is not valid JSON. Body: ${rawText.slice(0, 300)}`);
+		}
+
+		if (!data.access_token) {
+			throw new Error(`Token endpoint returned 2xx but no access_token. Full body: ${rawText.slice(0, 500)}`);
+		}
+
 		const tokens: WhoopTokens = {
 			access_token: data.access_token,
-			refresh_token: data.refresh_token,
-			expires_at: Date.now() + data.expires_in * 1000,
+			refresh_token: data.refresh_token!,
+			expires_at: Date.now() + (data.expires_in ?? 3600) * 1000,
 		};
 
 		this.tokens = tokens;
