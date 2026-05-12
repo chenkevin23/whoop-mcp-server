@@ -127,6 +127,7 @@ export class WhoopDatabase {
 				id TEXT PRIMARY KEY,
 				user_id INTEGER NOT NULL,
 				sport_id INTEGER NOT NULL,
+				sport_name TEXT,
 				start_time TEXT NOT NULL,
 				end_time TEXT NOT NULL,
 				score_state TEXT NOT NULL,
@@ -142,6 +143,16 @@ export class WhoopDatabase {
 				zone_five_milli INTEGER,
 				synced_at TEXT DEFAULT CURRENT_TIMESTAMP
 			);
+		`);
+
+		// Idempotent migration: add sport_name column if table predates v2 fix
+		try {
+			this.db.exec(`ALTER TABLE workouts ADD COLUMN sport_name TEXT`);
+		} catch {
+			// column already exists, fine
+		}
+
+		this.db.exec(`
 
 			CREATE INDEX IF NOT EXISTS idx_cycles_start ON cycles(start_time);
 			CREATE INDEX IF NOT EXISTS idx_recovery_created ON recovery(created_at);
@@ -298,19 +309,23 @@ export class WhoopDatabase {
 	upsertWorkouts(workouts: WhoopWorkout[]): void {
 		const stmt = this.db.prepare(`
 			INSERT OR REPLACE INTO workouts (
-				id, user_id, sport_id, start_time, end_time, score_state,
+				id, user_id, sport_id, sport_name, start_time, end_time, score_state,
 				strain, avg_hr, max_hr, kilojoule,
 				zone_zero_milli, zone_one_milli, zone_two_milli, zone_three_milli, zone_four_milli, zone_five_milli,
 				synced_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		`);
 
 		const insertMany = this.db.transaction((items: WhoopWorkout[]) => {
 			for (const w of items) {
+				// Whoop v2 nests zones under score.zone_durations (plural); v1 had score.zone_duration (singular).
+				// Optional-chain everything so partial payloads don't crash the batch.
+				const zones: any = (w.score as any)?.zone_durations ?? (w.score as any)?.zone_duration ?? {};
 				stmt.run(
 					w.id,
 					w.user_id,
-					w.sport_id,
+					w.sport_id ?? -1,
+					(w as any).sport_name ?? null,
 					w.start,
 					w.end,
 					w.score_state,
@@ -318,12 +333,12 @@ export class WhoopDatabase {
 					w.score?.average_heart_rate ?? null,
 					w.score?.max_heart_rate ?? null,
 					w.score?.kilojoule ?? null,
-					w.score?.zone_duration.zone_zero_milli ?? null,
-					w.score?.zone_duration.zone_one_milli ?? null,
-					w.score?.zone_duration.zone_two_milli ?? null,
-					w.score?.zone_duration.zone_three_milli ?? null,
-					w.score?.zone_duration.zone_four_milli ?? null,
-					w.score?.zone_duration.zone_five_milli ?? null
+					zones.zone_zero_milli ?? null,
+					zones.zone_one_milli ?? null,
+					zones.zone_two_milli ?? null,
+					zones.zone_three_milli ?? null,
+					zones.zone_four_milli ?? null,
+					zones.zone_five_milli ?? null
 				);
 			}
 		});

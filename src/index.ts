@@ -503,7 +503,7 @@ async function main(): Promise<void> {
 				workouts: workouts.map((w: any) => ({
 					id: w.id,
 					sport_id: w.sport_id,
-					sport: SPORT_NAMES[w.sport_id as number] ?? `sport_${w.sport_id}`,
+					sport: w.sport_name ?? SPORT_NAMES[w.sport_id as number] ?? (w.sport_id === -1 ? "activity" : `sport_${w.sport_id}`),
 					start: w.start_time,
 					end: w.end_time,
 					duration_min: w.start_time && w.end_time
@@ -594,7 +594,7 @@ async function main(): Promise<void> {
 				workouts: workouts.map((w: any) => ({
 					id: w.id,
 					sport_id: w.sport_id,
-					sport: SPORT_NAMES[w.sport_id as number] ?? `sport_${w.sport_id}`,
+					sport: w.sport_name ?? SPORT_NAMES[w.sport_id as number] ?? (w.sport_id === -1 ? "activity" : `sport_${w.sport_id}`),
 					start: w.start_time,
 					end: w.end_time,
 					duration_min: w.start_time && w.end_time
