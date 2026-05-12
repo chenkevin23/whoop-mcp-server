@@ -427,6 +427,9 @@ async function main(): Promise<void> {
 					skin_temp_c: recovery.skin_temp,
 				} : null,
 				sleep: sleep ? {
+					start: sleep.start_time,
+					end: sleep.end_time,
+					is_nap: sleep.is_nap === 1,
 					total_in_bed_min: sleep.total_in_bed_milli ? Math.round(sleep.total_in_bed_milli / 60000) : null,
 					total_awake_min: sleep.total_awake_milli ? Math.round(sleep.total_awake_milli / 60000) : null,
 					total_sleep_min: sleep.total_in_bed_milli && sleep.total_awake_milli
@@ -434,10 +437,17 @@ async function main(): Promise<void> {
 						: null,
 					performance_pct: sleep.sleep_performance,
 					efficiency_pct: sleep.sleep_efficiency,
+					consistency_pct: sleep.sleep_consistency,
 					light_min: sleep.total_light_milli ? Math.round(sleep.total_light_milli / 60000) : null,
 					deep_min: sleep.total_deep_milli ? Math.round(sleep.total_deep_milli / 60000) : null,
 					rem_min: sleep.total_rem_milli ? Math.round(sleep.total_rem_milli / 60000) : null,
 					respiratory_rate: sleep.respiratory_rate,
+					// Whoop "sleep coach" data — needed for "you owe X min of sleep" insights
+					sleep_need: {
+						baseline_min: sleep.sleep_needed_baseline_milli ? Math.round(sleep.sleep_needed_baseline_milli / 60000) : null,
+						debt_min: sleep.sleep_needed_debt_milli ? Math.round(sleep.sleep_needed_debt_milli / 60000) : null,
+						strain_bonus_min: sleep.sleep_needed_strain_milli ? Math.round(sleep.sleep_needed_strain_milli / 60000) : null,
+					},
 				} : null,
 				strain: cycle ? {
 					day_strain: cycle.strain,
