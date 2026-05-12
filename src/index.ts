@@ -371,6 +371,67 @@ async function main(): Promise<void> {
 			res.json({ status: 'ok', authenticated: Boolean(db.getTokens()) });
 		});
 
+		// REST endpoint for non-MCP clients (e.g. Donna) — returns latest Whoop data as JSON
+		// Auth: Bearer <MCP_AUTH_TOKEN>
+		app.get('/api/today', async (req: Request, res: Response) => {
+			const authHeader = req.headers['authorization'] || '';
+			const expected = process.env.MCP_AUTH_TOKEN;
+			if (!expected) {
+				res.status(500).json({ error: 'server_misconfigured', detail: 'MCP_AUTH_TOKEN not set' });
+				return;
+			}
+			if (authHeader !== `Bearer ${expected}`) {
+				res.status(401).json({ error: 'unauthorized' });
+				return;
+			}
+
+			const tokens = db.getTokens();
+			if (!tokens) {
+				res.status(503).json({ error: 'not_authenticated', detail: 'Whoop OAuth not completed' });
+				return;
+			}
+			client.setTokens(tokens);
+			try {
+				await sync.smartSync();
+			} catch {
+				// continue with cached data
+			}
+
+			const recovery = db.getLatestRecovery();
+			const sleep = db.getLatestSleep();
+			const cycle = db.getLatestCycle();
+
+			res.json({
+				as_of: new Date().toISOString(),
+				recovery: recovery ? {
+					score: recovery.recovery_score,
+					hrv_rmssd_ms: recovery.hrv_rmssd,
+					resting_hr_bpm: recovery.resting_hr,
+					spo2: recovery.spo2,
+					skin_temp_c: recovery.skin_temp,
+				} : null,
+				sleep: sleep ? {
+					total_in_bed_min: sleep.total_in_bed_milli ? Math.round(sleep.total_in_bed_milli / 60000) : null,
+					total_awake_min: sleep.total_awake_milli ? Math.round(sleep.total_awake_milli / 60000) : null,
+					total_sleep_min: sleep.total_in_bed_milli && sleep.total_awake_milli
+						? Math.round((sleep.total_in_bed_milli - sleep.total_awake_milli) / 60000)
+						: null,
+					performance_pct: sleep.sleep_performance,
+					efficiency_pct: sleep.sleep_efficiency,
+					light_min: sleep.total_light_milli ? Math.round(sleep.total_light_milli / 60000) : null,
+					deep_min: sleep.total_deep_milli ? Math.round(sleep.total_deep_milli / 60000) : null,
+					rem_min: sleep.total_rem_milli ? Math.round(sleep.total_rem_milli / 60000) : null,
+					respiratory_rate: sleep.respiratory_rate,
+				} : null,
+				strain: cycle ? {
+					day_strain: cycle.strain,
+					calories_kcal: cycle.kilojoule ? Math.round(cycle.kilojoule / 4.184) : null,
+					avg_hr_bpm: cycle.avg_hr,
+					max_hr_bpm: cycle.max_hr,
+				} : null,
+			});
+		});
+
 		app.all('/mcp', async (req: Request, res: Response) => {
 			const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
