@@ -343,6 +343,21 @@ async function main(): Promise<void> {
 		const app = express();
 		app.use(express.json());
 
+		// Whoop sport_id → human-readable name (common subset)
+		const SPORT_NAMES: Record<number, string> = {
+			0: "Running", 1: "Cycling", 11: "Basketball", 16: "Volleyball",
+			17: "Soccer", 18: "Boxing", 24: "Olympic Weightlifting",
+			39: "Mountain Biking", 42: "Skiing", 43: "Snowboarding",
+			44: "Surfing", 45: "Walking", 47: "Yoga", 48: "HIIT", 49: "Stairmaster",
+			50: "Functional Fitness", 51: "Pilates", 52: "Stretching", 53: "Hiking",
+			54: "Strength Trainer", 55: "Tennis", 56: "Squash", 57: "Pickleball",
+			59: "Rowing", 60: "Climbing", 61: "Bouldering", 63: "Field Hockey",
+			65: "Lacrosse", 66: "Rugby", 71: "Powerlifting", 76: "Tennis",
+			96: "Pilates", 97: "Yoga", 98: "Stretching",
+			102: "Baseball", 103: "Golf", 104: "Hockey", 105: "Weightlifting",
+			121: "Pickleball", 122: "Meditation", 123: "Meditation",
+		};
+
 		app.get('/callback', async (req: Request, res: Response) => {
 			const code = req.query.code as string | undefined;
 			if (!code) {
@@ -464,6 +479,10 @@ async function main(): Promise<void> {
 			if (!Number.isFinite(days) || days < 1) days = 14;
 			if (days > 90) days = 90;
 
+			const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
+			const until = new Date().toISOString();
+			const workouts = db.getWorkoutsByDateRange(since, until);
+
 			res.json({
 				as_of: new Date().toISOString(),
 				endpoint: "trends",
@@ -471,6 +490,80 @@ async function main(): Promise<void> {
 				recovery: db.getRecoveryTrends(days),
 				sleep: db.getSleepTrends(days),
 				strain: db.getStrainTrends(days),
+				workouts: workouts.map((w: any) => ({
+					id: w.id,
+					sport_id: w.sport_id,
+					sport: SPORT_NAMES[w.sport_id as number] ?? `sport_${w.sport_id}`,
+					start: w.start_time,
+					end: w.end_time,
+					duration_min: w.start_time && w.end_time
+						? Math.round((Date.parse(w.end_time) - Date.parse(w.start_time)) / 60000)
+						: null,
+					strain: w.strain,
+					avg_hr: w.avg_hr,
+					max_hr: w.max_hr,
+					kilojoule: w.kilojoule,
+					calories_kcal: w.kilojoule ? Math.round(w.kilojoule / 4.184) : null,
+					hr_zone_min: {
+						z0: w.zone_zero_milli ? Math.round(w.zone_zero_milli / 60000) : 0,
+						z1: w.zone_one_milli ? Math.round(w.zone_one_milli / 60000) : 0,
+						z2: w.zone_two_milli ? Math.round(w.zone_two_milli / 60000) : 0,
+						z3: w.zone_three_milli ? Math.round(w.zone_three_milli / 60000) : 0,
+						z4: w.zone_four_milli ? Math.round(w.zone_four_milli / 60000) : 0,
+						z5: w.zone_five_milli ? Math.round(w.zone_five_milli / 60000) : 0,
+					},
+				})),
+			});
+		});
+
+		// Dedicated workouts endpoint with same auth+shape as /api/trends.workouts
+		app.get('/api/workouts', async (req: Request, res: Response) => {
+			const authHeader = req.headers['authorization'] || '';
+			const expected = process.env.MCP_AUTH_TOKEN;
+			if (!expected) { res.status(500).json({ error: 'server_misconfigured' }); return; }
+			if (authHeader !== `Bearer ${expected}`) { res.status(401).json({ error: 'unauthorized' }); return; }
+
+			const tokens = db.getTokens();
+			if (!tokens) { res.status(503).json({ error: 'not_authenticated' }); return; }
+			client.setTokens(tokens);
+			try { await sync.smartSync(); } catch { /* cached */ }
+
+			let days = parseInt(String(req.query.days ?? '14'), 10);
+			if (!Number.isFinite(days) || days < 1) days = 14;
+			if (days > 90) days = 90;
+
+			const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
+			const until = new Date().toISOString();
+			const workouts = db.getWorkoutsByDateRange(since, until);
+
+			res.json({
+				as_of: new Date().toISOString(),
+				endpoint: "workouts",
+				days,
+				count: workouts.length,
+				workouts: workouts.map((w: any) => ({
+					id: w.id,
+					sport_id: w.sport_id,
+					sport: SPORT_NAMES[w.sport_id as number] ?? `sport_${w.sport_id}`,
+					start: w.start_time,
+					end: w.end_time,
+					duration_min: w.start_time && w.end_time
+						? Math.round((Date.parse(w.end_time) - Date.parse(w.start_time)) / 60000)
+						: null,
+					strain: w.strain,
+					avg_hr: w.avg_hr,
+					max_hr: w.max_hr,
+					kilojoule: w.kilojoule,
+					calories_kcal: w.kilojoule ? Math.round(w.kilojoule / 4.184) : null,
+					hr_zone_min: {
+						z0: w.zone_zero_milli ? Math.round(w.zone_zero_milli / 60000) : 0,
+						z1: w.zone_one_milli ? Math.round(w.zone_one_milli / 60000) : 0,
+						z2: w.zone_two_milli ? Math.round(w.zone_two_milli / 60000) : 0,
+						z3: w.zone_three_milli ? Math.round(w.zone_three_milli / 60000) : 0,
+						z4: w.zone_four_milli ? Math.round(w.zone_four_milli / 60000) : 0,
+						z5: w.zone_five_milli ? Math.round(w.zone_five_milli / 60000) : 0,
+					},
+				})),
 			});
 		});
 
